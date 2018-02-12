@@ -9,7 +9,9 @@ class WinRDDM:
         self.min_avg, self.min_std = None, None
         self.warning_window, self.errors_window = [], []
         self.warning_time, self.warning_bd, self.detection_bd = -1, wrn_bd, dtc_bd
+        self.last_warning_time_recorded, self.last_warning_window_recorded = None, None
         self.window_len = win_len
+        self.warning_time_updated = False
 
     def get_warning_params(self):
         return self.warning_time, self.warning_window
@@ -23,7 +25,7 @@ class WinRDDM:
         self.time += 1
         if len(self.errors_window) < self.window_len :
             self.errors_window.append(error)
-            return -1
+            return 0
 
         self.errors_window.append(error)
         self.errors_window.pop(0)
@@ -37,22 +39,42 @@ class WinRDDM:
         if self.min_avg is None or self.min_avg > avg:
             self.min_avg = avg
             self.min_std = std
+            self.warning_time_updated = False
             return 0
 
         if avg + std >= self.min_avg + self.detection_bd * self.min_std:
             # Detection
             print("Detection !")
+            self.last_warning_time_recorded = self.warning_time
+            self.last_warning_window_recorded = self.warning_window.copy()
+
+            # re init params
+            self.warning_window = []
+            self.warning_time = -1
+            self.warning_time_updated = False
+            self.min_avg, self.min_std = None, None
+
+            if self.warning_time != -1:
+                new_concept_idx = self.time - self.warning_time
+                if new_concept_idx < self.window_len:
+                    self.errors_window = self.errors_window[new_concept_idx:]
+            else:
+                self.errors_window = []
+
             return 2
 
         if avg + std >= self.min_avg + self.warning_bd * self.min_std:
             # Warning
-            self.warning_time = self.time
+            if self.warning_time_updated is False:
+                self.warning_time = self.time
+                self.warning_time_updated = True
+                self.warning_window = []
+
             self.warning_window.append(sample)
             print("Warning ", len(self.warning_window))
             return 1
 
-        self.warning_window = []
-        self.warning_time = -1
+        self.warning_time_updated = False
         return 0
 
 
