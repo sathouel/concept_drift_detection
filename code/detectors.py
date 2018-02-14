@@ -8,12 +8,13 @@ def scorer(pred, label):
 # Mapping : -1 - filling window, 0 - RAS, 1 - Warning, 2 - Detection
 # Sample : (X, y)
 class WinRDDM:
-    def __init__(self, win_len=20, wrn_bd=2, dtc_bd=4):
+    def __init__(self, win_len=20, wrn_bd=2, dtc_bd=4, verbose=False):
+        self.verbose = verbose
         self.time = 0
         self.min_avg, self.min_std = None, None
         self.warning_window, self.errors_window = [], []
         self.warning_time, self.warning_bd, self.detection_bd = -1, wrn_bd, dtc_bd
-        self.last_warning_time_recorded, self.last_warning_window_recorded = None, None
+        self.last_warning_time_recorded, self.last_warning_window_recorded = -1, None
         self.window_len = win_len
         self.warning_time_updated = False
 
@@ -22,8 +23,19 @@ class WinRDDM:
 
     def reset(self):
         self.min_avg, self.min_std = None, None
-        self.warning_window, self.errors_window = [], []
-        self.warning_time = -1
+        self.warning_window = []
+        self.warning_time_updated = False
+
+        if self.warning_time != -1:
+            new_concept_idx = self.time - self.warning_time
+            if new_concept_idx < self.window_len:
+                self.errors_window = self.errors_window[new_concept_idx:]
+            self.warning_time = -1
+        else:
+            new_concept_idx = self.time - self.last_warning_time_recorded
+            if new_concept_idx < self.window_len:
+                self.errors_window = self.errors_window[new_concept_idx:]
+
 
     def predict(self, sample, error):
         self.time += 1
@@ -37,8 +49,9 @@ class WinRDDM:
         avg = float(sum(self.errors_window)) / self.window_len
         std = np.sqrt(sum((np.array(self.errors_window) - avg) ** 2) / self.window_len)
 
-        print(" avg : ", avg, " std : ", std)
-        print("min avg : ", self.min_avg, " min std : ", self.min_std)
+        if self.verbose:
+            print(" avg : ", avg, " std : ", std)
+            print("min avg : ", self.min_avg, " min std : ", self.min_std)
 
         if self.min_avg is None or self.min_avg > avg:
             self.min_avg = avg
@@ -48,23 +61,13 @@ class WinRDDM:
 
         if avg + std >= self.min_avg + self.detection_bd * self.min_std:
             # Detection
-            print("Detection !")
+            if self.verbose:
+                print("Detection !")
             self.last_warning_time_recorded = self.warning_time
             self.last_warning_window_recorded = self.warning_window.copy()
 
             # re init params
-            self.warning_window = []
-            self.warning_time = -1
-            self.warning_time_updated = False
-            self.min_avg, self.min_std = None, None
-
-            if self.warning_time != -1:
-                new_concept_idx = self.time - self.warning_time
-                if new_concept_idx < self.window_len:
-                    self.errors_window = self.errors_window[new_concept_idx:]
-            else:
-                self.errors_window = []
-
+            self.reset()
             return 2
 
         if avg + std >= self.min_avg + self.warning_bd * self.min_std:
@@ -75,7 +78,8 @@ class WinRDDM:
                 self.warning_window = []
 
             self.warning_window.append(sample)
-            print("Warning ", len(self.warning_window))
+            if self.verbose:
+                print("Warning ", len(self.warning_window))
             return 1
 
         self.warning_time_updated = False
@@ -84,7 +88,7 @@ class WinRDDM:
 
 class DetectorsSet:
 
-    def __init__(self, win_lens, wrn_bds, dtc_bds, base_detector=WinRDDM, reset_thr=None):
+    def __init__(self, win_lens, wrn_bds, dtc_bds, base_detector=WinRDDM, reset_thr=None, verbose=False):
         if type(win_lens) != list or type(wrn_bds) != list or type(dtc_bds) != list:
             print('ERROR TYPE list objects expected')
             return
