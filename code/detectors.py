@@ -12,7 +12,7 @@ class WinRDDM:
         self.verbose = verbose
         self.time = 0
         self.min_avg, self.min_std = None, None
-        self.warning_window, self.errors_window = [], []
+        self.warning_window, self.errors_window, self.data = [], [], []
         self.warning_time, self.warning_bd, self.detection_bd = -1, wrn_bd, dtc_bd
         self.last_warning_time_recorded, self.last_warning_window_recorded = -1, None
         self.window_len = win_len
@@ -21,30 +21,49 @@ class WinRDDM:
     def get_warning_params(self):
         return self.last_warning_window_recorded, self.last_warning_time_recorded
 
+
+    # refill error window from res_time according to new model
+    def reset_window(self, new_model, res_time=None, scorer=scorer):
+        if res_time is None:
+            res_time = self.last_warning_time_recorded
+        n_el_to_add = self.time - res_time
+        self.data.reverse()
+        self.data = self.data[:n_el_to_add]
+        self.errors_window = []
+        for sample, label in self.data:
+            pred = new_model.predict([sample])
+            error = scorer(pred, label)
+            self.errors_window.insert(0, error)
+            if len(self.errors_window) == self.window_len:
+                break
+        self.data.reverse()
+        self.reset()
+
+
+    # function called after cd detected
     def reset(self):
         self.min_avg, self.min_std = None, None
         self.warning_window = []
         self.warning_time_updated = False
-
-        if self.warning_time != -1:
-            new_concept_idx = self.time - self.warning_time
-            if new_concept_idx < self.window_len:
-                self.errors_window = self.errors_window[new_concept_idx:]
-            self.warning_time = -1
-        else:
-            new_concept_idx = self.time - self.last_warning_time_recorded
-            if new_concept_idx < self.window_len:
-                self.errors_window = self.errors_window[new_concept_idx:]
+        # possible improvement
+        half = int(len(self.errors_window)/2)
+        self.errors_window = self.errors_window[half:]
 
 
-    def predict(self, sample, error):
+    def predict(self, sample, pred, label, scorer=scorer):        
         self.time += 1
+        error = scorer(pred, label)
         if len(self.errors_window) < self.window_len :
+            self.warning_time = -1
             self.errors_window.append(error)
+            self.data.append((sample, label))
             return 0
 
         self.errors_window.append(error)
         self.errors_window.pop(0)
+
+        self.data.append((sample, label))
+        self.data.pop(0)
 
         avg = float(sum(self.errors_window)) / self.window_len
         std = np.sqrt(sum((np.array(self.errors_window) - avg) ** 2) / self.window_len)
@@ -77,12 +96,13 @@ class WinRDDM:
                 self.warning_time_updated = True
                 self.warning_window = []
 
-            self.warning_window.append(sample)
+            self.warning_window.append((sample, label))
             if self.verbose:
                 print("Warning ", len(self.warning_window))
             return 1
 
         self.warning_time_updated = False
+        self.warning_time = -1
         return 0
 
 
@@ -103,15 +123,14 @@ class DetectorsSet:
         self.detection_counter = 0
         self.reset_thr = reset_thr
 
-    def reset_detectors(self):
+    def reset_detectors(self, new_model):
         for i in range(len(self.detectors_set)):
-            self.detectors_set[i].reset()
+            self.detectors_set[i].reset_window(new_model)
 
     def predict(self, sample, pred, label, scorer=scorer):
         sol = []
-        error = scorer(pred, label)
         for d in self.detectors_set:
-            prediction = d.predict(sample, error)
+            prediction = d.predict(sample, pred, label, scorer)
             sol.append(prediction)
             if prediction == 2:
                 self.detection_counter += 1
@@ -121,6 +140,21 @@ class DetectorsSet:
             self.reset_detectors()
             
         return sol
+
+class MainDetector:
+
+    def __init__(self, detectors_set, clf):
+        self.detectors_set = detectors_set
+        self.clf = clf
+
+    def predict(self, sample, pred, label, scorer=scorer):
+        x = self.detectors_set.predict(sample, pred, label, scorer=scorer)
+        cd_pred = self.clf.predict([x])
+        return cd_pred
+
+    def reset_detectors(self, new_model):
+        self.detectors_set.reset_detectors(new_model)
+
 
 # class REDDM:
 #     def __init__(self, win_len=20, wrn_bd=0.95, dtc_bd=0.9, percentile=90):
