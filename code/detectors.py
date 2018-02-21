@@ -23,7 +23,7 @@ class WinRDDM:
 
 
     # refill error window from res_time according to new model
-    def reset_window(self, new_model, res_time=None, scorer=scorer):
+    def reset_window(self, new_model, res_time=None, scorer=scorer, soft_reset=False, hard_reset=False):
         if res_time is None:
             res_time = self.warning_time
             if self.warning_time < 0:
@@ -40,18 +40,21 @@ class WinRDDM:
             if len(self.errors_window) == self.window_len:
                 break
         self.data.reverse()
-        self.reset(True)
+        self.reset(soft_reset, hard_reset)
 
 
     # function called after cd detected
-    def reset(self, half_err_win=True):
+    def reset(self, soft_reset=True, hard_reset=False):
         self.min_avg, self.min_std = None, None
         self.warning_window = []
         self.warning_time_updated = False
         # possible improvement
-        if half_err_win:
+        if hard_reset:
+            self.errors_window = []
+        elif soft_reset:
             half = int(len(self.errors_window)/2)
             self.errors_window = self.errors_window[half:]
+        
 
 
     def predict(self, sample, pred, label, scorer=scorer):        
@@ -127,9 +130,9 @@ class DetectorsSet:
         self.detection_counter = 0
         self.reset_thr = reset_thr
 
-    def reset_detectors(self, new_model):
+    def reset_detectors(self, new_model, soft_reset=False, hard_reset=False):
         for i in range(len(self.detectors_set)):
-            self.detectors_set[i].reset_window(new_model)
+            self.detectors_set[i].reset_window(new_model, soft_reset=soft_reset, hard_reset=hard_reset)
 
     def predict(self, sample, pred, label, scorer=scorer):
         sol = []
@@ -159,8 +162,8 @@ class MainDetector:
         cd_pred = self.clf.predict([x])
         return cd_pred
 
-    def reset_detectors(self, new_model):
-        self.detectors_set.reset_detectors(new_model)
+    def reset_detectors(self, new_model, soft_reset=False, hard_reset=False):
+        self.detectors_set.reset_detectors(new_model, soft_reset, hard_reset)
 
 
 # class REDDM:
