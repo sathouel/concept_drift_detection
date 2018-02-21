@@ -111,6 +111,9 @@ class WinRDDM:
         self.warning_time_updated = False
         self.warning_time = -1
         return 0
+    
+    def get_time(self):
+        return self.time
 
 
 class DetectorsSet:
@@ -148,6 +151,7 @@ class DetectorsSet:
             
         return sol
 
+# NOTES : need to add avg warning time and sample window for storing samples and return samples of the new concept after cdd (for retraining the model)
 class MainDetector:
 
     def __init__(self, detectors_set, clf):
@@ -166,6 +170,7 @@ class MainDetector:
         self.detectors_set.reset_detectors(new_model, soft_reset, hard_reset)
 
 
+        
 # class REDDM:
 #     def __init__(self, win_len=20, wrn_bd=0.95, dtc_bd=0.9, percentile=90):
 #         self.time = 0
