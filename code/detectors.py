@@ -40,7 +40,7 @@ class WinRDDM:
             if len(self.errors_window) == self.window_len:
                 break
         self.data.reverse()
-        self.reset(False)
+        self.reset(True)
 
 
     # function called after cd detected
