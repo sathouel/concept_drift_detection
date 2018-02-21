@@ -25,7 +25,10 @@ class WinRDDM:
     # refill error window from res_time according to new model
     def reset_window(self, new_model, res_time=None, scorer=scorer):
         if res_time is None:
-            res_time = self.last_warning_time_recorded
+            res_time = self.warning_time
+            if self.warning_time < 0:
+                res_time = self.last_warning_time_recorded
+
         n_el_to_add = self.time - res_time
         self.data.reverse()
         self.data = self.data[:n_el_to_add]
@@ -37,17 +40,18 @@ class WinRDDM:
             if len(self.errors_window) == self.window_len:
                 break
         self.data.reverse()
-        self.reset()
+        self.reset(False)
 
 
     # function called after cd detected
-    def reset(self):
+    def reset(self, half_err_win=True):
         self.min_avg, self.min_std = None, None
         self.warning_window = []
         self.warning_time_updated = False
         # possible improvement
-        half = int(len(self.errors_window)/2)
-        self.errors_window = self.errors_window[half:]
+        if half_err_win:
+            half = int(len(self.errors_window)/2)
+            self.errors_window = self.errors_window[half:]
 
 
     def predict(self, sample, pred, label, scorer=scorer):        
@@ -147,6 +151,9 @@ class MainDetector:
         self.detectors_set = detectors_set
         self.clf = clf
 
+    def fit(self, X, y):
+        self.clf.fit(X, y)
+
     def predict(self, sample, pred, label, scorer=scorer):
         x = self.detectors_set.predict(sample, pred, label, scorer=scorer)
         cd_pred = self.clf.predict([x])
@@ -204,9 +211,3 @@ class MainDetector:
 #         self.errors_window.append(error)
 #         self.errors_window.pop(0)
 #         return False
-
-
-
-
-
-
