@@ -5,6 +5,12 @@ import numpy as np
 def scorer(pred, label):
     return np.sum((pred - label) ** 2)
 
+# ----- Hyper params ---- #
+SOFT_RESET = 0
+HALF_RESET = 1
+WRN_RESET = 2
+HARD_RESET = 3
+
 # Mapping : -1 - filling window, 0 - RAS, 1 - Warning, 2 - Detection
 # Sample : (X, y)
 class WinRDDM:
@@ -23,40 +29,39 @@ class WinRDDM:
 
 
     # refill error window from res_time according to new model
-    def reset_window(self, new_model, res_time=None, scorer=scorer, soft_reset=False, hard_reset=False):
-        if res_time is None:
-            res_time = self.warning_time
-            if self.warning_time < 0:
-                res_time = self.last_warning_time_recorded
+    def reset_window(self, new_model=None, reset_mode=SOFT_RESET, scorer=scorer):
+            
+        if reset_mode == HALF_RESET:
+            half = int(len(self.errors_window)/2)
+            self.errors_window = self.errors_window[half:]
+            self.data = self.data[half:]
+        elif reset_mode == WRN_RESET:
+            n_el_to_add = self.time - self.last_warning_time_recorded
+            idx = len(self.errors_window) - n_el_to_add
+            self.errors_window = self.errors_window[idx:]
+            self.data = self.data[idx:]
+        elif reset_mode == HARD_RESET:
+            self.errors_window = []
+            self.data = []
+            return
 
-        n_el_to_add = self.time - res_time
-        self.data.reverse()
-        self.data = self.data[:n_el_to_add]
-        self.errors_window = []
-        for sample, label in self.data:
-            pred = new_model.predict([sample])
-            error = scorer(pred, label)
-            self.errors_window.insert(0, error)
-            if len(self.errors_window) == self.window_len:
-                break
-        self.data.reverse()
-        self.reset(soft_reset, hard_reset)
+        if new_model is not None:
+            self.errors_window = [] 
+            for sample, label in self.data:
+                pred = new_model.predict([sample])
+                error = scorer(pred, label)
+                self.errors_window.append(error)
 
 
     # function called after cd detected
-    def reset(self, soft_reset=True, hard_reset=False):
+    def reset(self, new_model=None, reset_mode=SOFT_RESET, scorer=scorer):
         self.min_avg, self.min_std = None, None
         self.warning_window = []
         self.warning_time_updated = False
-        # possible improvement
-        if hard_reset:
-            self.errors_window = []
-        elif soft_reset:
-            half = int(len(self.errors_window)/2)
-            self.errors_window = self.errors_window[half:]
+        self.warning_time = -1
+        reset_window(self, new_model=new_model, reset_mode=reset_mode, scorer=scorer)
+
         
-
-
     def predict(self, sample, pred, label, scorer=scorer):        
         self.time += 1
         error = scorer(pred, label)
@@ -133,9 +138,9 @@ class DetectorsSet:
         self.detection_counter = 0
         self.reset_thr = reset_thr
 
-    def reset_detectors(self, new_model, soft_reset=False, hard_reset=False):
+    def reset_detectors(self, new_model=None, reset_mode=SOFT_RESET):
         for i in range(len(self.detectors_set)):
-            self.detectors_set[i].reset_window(new_model, soft_reset=soft_reset, hard_reset=hard_reset)
+            self.detectors_set[i].reset_window(new_model=new_model, reset_mode=reset_mode)
 
     def predict(self, sample, pred, label, scorer=scorer):
         sol = []
@@ -166,56 +171,7 @@ class MainDetector:
         cd_pred = self.clf.predict([x])
         return cd_pred
 
-    def reset_detectors(self, new_model, soft_reset=False, hard_reset=False):
-        self.detectors_set.reset_detectors(new_model, soft_reset, hard_reset)
+    def reset_detectors(self, new_model=None, reset_mode=SOFT_RESET):
+        self.detectors_set.reset_detectors(new_model=new_model, reset_mode=reset_mode)
 
 
-        
-# class REDDM:
-#     def __init__(self, win_len=20, wrn_bd=0.95, dtc_bd=0.9, percentile=90):
-#         self.time = 0
-#         self.min_avg, self.min_std = None, None
-#         self.warning_window, self.errors_window = [], []
-#         self.warning_time, self.warning_bd, self.detection_bd = -1, wrn_bd, dtc_bd
-#         self.window_len = win_len
-#         self.percentile = percentile
-#         self.difs = []
-#         self.max_avg, self.max_err_time_avg, self.max_err_time_std = 0, 0, 0
-
-#     # check that the percentile is greater than the average before classifying it as error
-
-#     def predict(self, sample, error):
-#         self.time += 1
-#         if len(self.errors_window) < self.window_len:
-#             self.errors_window.append(error)
-#             return False
-
-#         qtile = np.percentile(np.array(self.errors_window), self.percentile)
-#         avg = np.mean(np.array(self.errors_window))
-
-#         if error > qtile and error > 1.2 * avg:
-#             if self.max_avg == 0:
-#                 self.max_avg = self.time
-#                 return False
-#             self.difs.append(self.time - self.max_avg)
-#             self.max_avg = 0
-
-#             curr_avg = np.mean(self.difs)
-#             curr_std = np.std(self.difs)
-
-#             self.max_err_time_avg = self.max_err_time_avg if self.max_err_time_avg > curr_avg else curr_avg
-#             self.max_err_time_std = self.max_err_time_std if self.max_err_time_avg > curr_avg else curr_std
-
-#             if (curr_avg + 2 * curr_std) / (self.max_err_time_avg + 2 * self.max_err_time_std) < self.warning_bd:
-#                 print("Warning !")
-#                 self.warning_window.append(sample)
-#                 self.warning_time.append(self.time)
-#                 return False
-
-#             if (curr_avg + 2 * curr_std) / (self.max_err_time_avg + 2 * self.max_err_time_std) < self.detection_bd:
-#                 print("Detection !")
-#                 return True
-
-#         self.errors_window.append(error)
-#         self.errors_window.pop(0)
-#         return False
