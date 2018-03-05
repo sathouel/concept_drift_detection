@@ -37,7 +37,7 @@ class WinRDDM:
             self.errors_window = self.errors_window[half:]
             self.data = self.data[half:]
         elif self.reset_mode == WRN_RESET:
-            n_el_to_add = self.time - self.last_warning_time_recorded
+            n_el_to_add = self.time - max(self.last_warning_time_recorded, self.warning_time)
             idx = len(self.errors_window) - n_el_to_add
             self.errors_window = self.errors_window[idx:]
             self.data = self.data[idx:]
