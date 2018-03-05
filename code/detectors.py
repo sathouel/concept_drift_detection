@@ -14,7 +14,7 @@ HARD_RESET = 3
 # Mapping : -1 - filling window, 0 - RAS, 1 - Warning, 2 - Detection
 # Sample : (X, y)
 class WinRDDM:
-    def __init__(self, win_len=20, wrn_bd=2, dtc_bd=4, reset_mode=HALF_RESET, verbose=False):
+    def __init__(self, reset_mode, win_len=20, wrn_bd=2, dtc_bd=4, verbose=False):
         self.verbose = verbose
         self.time = 0
         self.min_avg, self.min_std = None, None
@@ -30,7 +30,7 @@ class WinRDDM:
 
 
     # refill error window from res_time according to new model
-    def reset_window(self, new_model=None, reset_mode=HALF_RESET, scorer=scorer):
+    def reset_window(self, reset_mode, new_model=None, scorer=scorer):
             
         if self.reset_mode == HALF_RESET:
             half = int(len(self.errors_window)/2)
@@ -60,7 +60,7 @@ class WinRDDM:
         self.warning_window = []
         self.warning_time_updated = False
         self.warning_time = -1
-        self.reset_window(new_model=new_model, scorer=scorer)
+        self.reset_window(reset_mode=self.reset_mode, new_model=new_model, scorer=scorer)
 
         
     def predict(self, sample, pred, label, scorer=scorer):        
@@ -124,7 +124,7 @@ class WinRDDM:
 
 class DetectorsSet:
 
-    def __init__(self, win_lens, wrn_bds, dtc_bds, reset_mode=HALF_RESET, base_detector=WinRDDM, reset_thr=None, verbose=False):
+    def __init__(self, win_lens, wrn_bds, dtc_bds, reset_mode, base_detector=WinRDDM, reset_thr=None, verbose=False):
         if type(win_lens) != list or type(wrn_bds) != list or type(dtc_bds) != list:
             print('ERROR TYPE list objects expected')
             return
