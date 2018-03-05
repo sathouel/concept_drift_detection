@@ -14,7 +14,7 @@ HARD_RESET = 3
 # Mapping : -1 - filling window, 0 - RAS, 1 - Warning, 2 - Detection
 # Sample : (X, y)
 class WinRDDM:
-    def __init__(self, win_len=20, wrn_bd=2, dtc_bd=4, verbose=False):
+    def __init__(self, win_len=20, wrn_bd=2, dtc_bd=4, reset_mode=HALF_RESET, verbose=False):
         self.verbose = verbose
         self.time = 0
         self.min_avg, self.min_std = None, None
@@ -23,6 +23,7 @@ class WinRDDM:
         self.last_warning_time_recorded, self.last_warning_window_recorded = -1, None
         self.window_len = win_len
         self.warning_time_updated = False
+        self.reset_mode = reset_mode
 
     def get_warning_params(self):
         return self.last_warning_window_recorded, self.last_warning_time_recorded
@@ -31,16 +32,16 @@ class WinRDDM:
     # refill error window from res_time according to new model
     def reset_window(self, new_model=None, reset_mode=HALF_RESET, scorer=scorer):
             
-        if reset_mode == HALF_RESET:
+        if self.reset_mode == HALF_RESET:
             half = int(len(self.errors_window)/2)
             self.errors_window = self.errors_window[half:]
             self.data = self.data[half:]
-        elif reset_mode == WRN_RESET:
+        elif self.reset_mode == WRN_RESET:
             n_el_to_add = self.time - self.last_warning_time_recorded
             idx = len(self.errors_window) - n_el_to_add
             self.errors_window = self.errors_window[idx:]
             self.data = self.data[idx:]
-        elif reset_mode == HARD_RESET:
+        elif self.reset_mode == HARD_RESET:
             self.errors_window = []
             self.data = []
             return
@@ -54,12 +55,12 @@ class WinRDDM:
 
 
     # function called after cd detected
-    def reset(self, new_model=None, reset_mode=HALF_RESET, scorer=scorer):
+    def reset(self, new_model=None, scorer=scorer):
         self.min_avg, self.min_std = None, None
         self.warning_window = []
         self.warning_time_updated = False
         self.warning_time = -1
-        self.reset_window(new_model=new_model, reset_mode=reset_mode, scorer=scorer)
+        self.reset_window(new_model=new_model, scorer=scorer)
 
         
     def predict(self, sample, pred, label, scorer=scorer):        
@@ -132,16 +133,19 @@ class DetectorsSet:
         for win_len in win_lens:
             for wrn_bd in wrn_bds:
                 for dtc_bd in dtc_bds:
-                    new_detector = base_detector(win_len=win_len ,wrn_bd=wrn_bd, dtc_bd=dtc_bd)
+                    new_detector = base_detector(win_len=win_len ,wrn_bd=wrn_bd, dtc_bd=dtc_bd, reset_mode=reset_mode)
                     self.detectors_set.append(new_detector)
 
         self.detection_counter = 0
         self.reset_thr = reset_thr
         self.reset_mode = reset_mode
+        self.win_lens = win_lens
+        self.wrn_bds = wrn_bds
+        self.dtc_bds = dtc_bds
 
     def reset_detectors(self, new_model=None):
         for i in range(len(self.detectors_set)):
-            self.detectors_set[i].reset_window(new_model=new_model, reset_mode=self.reset_mode)
+            self.detectors_set[i].reset(new_model=new_model)
 
     def predict(self, sample, pred, label, scorer=scorer):
         sol = []
@@ -176,15 +180,36 @@ class MainDetector:
     def fit(self, X, y):
         self.clf.fit(X, y)
 
+    def cd_detected(self, pred_vec):
+        for val in pred_vec:
+            if val == 2:
+                return True
+        return False
+
     def predict(self, sample, pred, label, scorer=scorer):
         x = self.detectors_set.predict(sample, pred, label, scorer=scorer)
-        cd_pred = self.clf.predict([x])
-        return cd_pred
+        if self.cd_detected(x):
+            return  self.clf.predict([x])
+        else:
+            return 0
 
     def get_new_training_set(self):
         return self.detectors_set.get_max_warning_window()
 
     def reset_detectors(self, new_model=None):
         self.detectors_set.reset_detectors(new_model=new_model)
+
+    def __str__(self):
+        min_win_len, max_win_len = self.detectors_set.win_lens[0], self.detectors_set.win_lens[-1]
+        min_wrn_bd, max_wrn_bd = self.detectors_set.wrn_bds[0], self.detectors_set.wrn_bds[-1]
+        min_dtc_bd, max_dtc_bd = self.detectors_set.dtc_bds[0], self.detectors_set.dtc_bds[-1]
+        detectors_set_size = len(self.detectors_set.detectors_set)
+        reset_mode_mapping = {0:'soft', 1:'half', 2:'warn', 3:'hard'} 
+        res_mode = reset_mode_mapping[self.detectors_set.reset_mode]
+
+        res = 'detectors set: size %d; min-max wrn bds %d-%d; min-max dtc bds %d-%d; min-max win len %d-%d; reset mode %s'\
+        %(detectors_set_size, min_wrn_bd, max_wrn_bd, min_dtc_bd, max_dtc_bd, min_win_len, max_win_len, res_mode)
+
+        return res
 
 
