@@ -207,7 +207,7 @@ class MainDetector:
         reset_mode_mapping = {0:'soft', 1:'half', 2:'warn', 3:'hard'} 
         res_mode = reset_mode_mapping[self.detectors_set.reset_mode]
 
-        res = 'detectors set: size %d; min-max wrn bds %d-%d; min-max dtc bds %d-%d; min-max win len %d-%d; reset mode %s'\
+        res = 'detectors set: size %d; min-max wrn bds %f-%f; min-max dtc bds %f-%f; min-max win len %d-%d; reset mode %s'\
         %(detectors_set_size, min_wrn_bd, max_wrn_bd, min_dtc_bd, max_dtc_bd, min_win_len, max_win_len, res_mode)
 
         return res
