@@ -29,7 +29,7 @@ class WinRDDM:
 
 
     # refill error window from res_time according to new model
-    def reset_window(self, new_model=None, reset_mode=SOFT_RESET, scorer=scorer):
+    def reset_window(self, new_model=None, reset_mode=HALF_RESET, scorer=scorer):
             
         if reset_mode == HALF_RESET:
             half = int(len(self.errors_window)/2)
@@ -54,12 +54,12 @@ class WinRDDM:
 
 
     # function called after cd detected
-    def reset(self, new_model=None, reset_mode=SOFT_RESET, scorer=scorer):
+    def reset(self, new_model=None, reset_mode=HALF_RESET, scorer=scorer):
         self.min_avg, self.min_std = None, None
         self.warning_window = []
         self.warning_time_updated = False
         self.warning_time = -1
-        reset_window(self, new_model=new_model, reset_mode=reset_mode, scorer=scorer)
+        self.reset_window(new_model=new_model, reset_mode=reset_mode, scorer=scorer)
 
         
     def predict(self, sample, pred, label, scorer=scorer):        
@@ -123,7 +123,7 @@ class WinRDDM:
 
 class DetectorsSet:
 
-    def __init__(self, win_lens, wrn_bds, dtc_bds, base_detector=WinRDDM, reset_thr=None, verbose=False):
+    def __init__(self, win_lens, wrn_bds, dtc_bds, reset_mode=HALF_RESET, base_detector=WinRDDM, reset_thr=None, verbose=False):
         if type(win_lens) != list or type(wrn_bds) != list or type(dtc_bds) != list:
             print('ERROR TYPE list objects expected')
             return
@@ -137,10 +137,11 @@ class DetectorsSet:
 
         self.detection_counter = 0
         self.reset_thr = reset_thr
+        self.reset_mode = reset_mode
 
-    def reset_detectors(self, new_model=None, reset_mode=SOFT_RESET):
+    def reset_detectors(self, new_model=None):
         for i in range(len(self.detectors_set)):
-            self.detectors_set[i].reset_window(new_model=new_model, reset_mode=reset_mode)
+            self.detectors_set[i].reset_window(new_model=new_model, reset_mode=self.reset_mode)
 
     def predict(self, sample, pred, label, scorer=scorer):
         sol = []
@@ -155,6 +156,15 @@ class DetectorsSet:
             self.reset_detectors()
             
         return sol
+
+    def get_max_warning_window(self):
+        max_wrn_win, max_len = None, 0
+        for d in self.detectors_set:
+            curr_win, _ = d.get_warning_params()
+            max_wrn_win = max_wrn_win if max_len >= len(curr_win) else curr_win
+            max_len = max_len if max_len >= len(curr_win) else len(curr_win)
+
+        return max_wrn_win
 
 # NOTES : need to add avg warning time and sample window for storing samples and return samples of the new concept after cdd (for retraining the model)
 class MainDetector:
@@ -171,7 +181,10 @@ class MainDetector:
         cd_pred = self.clf.predict([x])
         return cd_pred
 
-    def reset_detectors(self, new_model=None, reset_mode=SOFT_RESET):
-        self.detectors_set.reset_detectors(new_model=new_model, reset_mode=reset_mode)
+    def get_new_training_set(self):
+        return self.detectors_set.get_max_warning_window()
+
+    def reset_detectors(self, new_model=None):
+        self.detectors_set.reset_detectors(new_model=new_model)
 
 
